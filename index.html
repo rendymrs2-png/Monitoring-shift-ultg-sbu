@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Monitoring Shift PLN UPT Surabaya</title>
+    <!-- Script Dependencies -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .pln-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); }
+        .card-premium { border-radius: 2.5rem; background: white; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
+        .page-transition { animation: slideUp 0.3s ease-out forwards; }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .custom-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%231e3a8a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1.5em;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Firebase SDK Loader -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Global Firebase Object for Babel Script
+        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, deleteDoc, doc, getDocs };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                image: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
+                zap: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
+                wa: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-10.8 8.38 8.38 0 0 1 3.8.9L21 4.5l-1 4.5 1 2.5z"></path></svg>,
+                search: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+                clock: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            };
+            return icons[name] || null;
+        };
+
+        function App() {
+            const [view, setView] = useState('form');
+            const [user, setUser] = useState(null);
+            const [logs, setLogs] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [notif, setNotif] = useState(null);
+            
+            // Form States
+            const [lokasi, setLokasi] = useState('');
+            const [petugas, setPetugas] = useState('');
+            const [whatsapp, setWhatsapp] = useState('');
+            const [shiftType, setShiftType] = useState('');
+            const [shiftLainnya, setShiftLainnya] = useState('');
+            const [keterangan, setKeterangan] = useState('');
+            const [foto, setFoto] = useState(null);
+            
+            const fileRef = useRef(null);
+
+            const appId = "pln-shift-upt-surabaya";
+            const firebaseConfig = JSON.parse(window.__firebase_config || "{}");
+
+            const shiftOptions = ["SHIFT 1", "SHIFT 2", "SHIFT 3", "LAINNYA"];
+
+            useEffect(() => {
+                const init = async () => {
+                    if (!window.FB) return;
+                    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, getDocs, deleteDoc, doc } = window.FB;
+                    
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        const db = getFirestore(app);
+
+                        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                            await signInWithCustomToken(auth, window.__initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+
+                        onAuthStateChanged(auth, async (u) => {
+                            setUser(u);
+                            if (u) {
+                                const path = `/artifacts/${appId}/public/data/shift_logs`;
+                                const twoWeeksAgo = new Date();
+                                twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+                                
+                                const colRef = collection(db, path);
+                                
+                                const snapClean = await getDocs(colRef);
+                                snapClean.forEach(async (document) => {
+                                    const data = document.data();
+                                    if (data.timestamp && data.timestamp.toDate() < twoWeeksAgo) {
+                                        await deleteDoc(doc(db, path, document.id));
+                                    }
+                                });
+
+                                const unsubscribe = onSnapshot(colRef, (snap) => {
+                                    const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setLogs(rawData.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+                                }, (err) => console.error("Firestore error:", err));
+                                return () => unsubscribe();
+                            }
+                        });
+                    } catch (e) { console.error("Init Error:", e); }
+                };
+                init();
+            }, []);
+
+            const notify = (msg, type = "success") => {
+                setNotif({ msg, type });
+                setTimeout(() => setNotif(null), 3000);
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 3 * 1024 * 1024) return notify("Ukuran file maks 3MB", "error");
+                    const reader = new FileReader();
+                    reader.onload = () => setFoto(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const submitReport = async () => {
+                const finalShift = shiftType === 'LAINNYA' ? shiftLainnya : shiftType;
+                if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) return notify("Lengkapi data & foto!", "error");
+                
+                setLoading(true);
+                try {
+                    const { getFirestore, collection, addDoc, Timestamp } = window.FB;
+                    const db = getFirestore();
+                    await addDoc(collection(db, `/artifacts/${appId}/public/data/shift_logs`), {
+                        tempatKerja: lokasi.toUpperCase(),
+                        petugasPengganti: petugas.toUpperCase(),
+                        whatsapp: whatsapp.replace(/[^0-9]/g, ''),
+                        shiftWaktu: finalShift.toUpperCase(),
+                        keterangan: keterangan,
+                        foto: foto,
+                        timestamp: Timestamp.now(),
+                        uid: user.uid
+                    });
+                    
+                    setLokasi(''); setPetugas(''); setWhatsapp(''); setShiftType(''); setShiftLainnya(''); setKeterangan(''); setFoto(null);
+                    setView('active');
+                    notify("Laporan Terkirim!");
+                } catch (e) { notify("Gagal mengirim", "error"); }
+                setLoading(false);
+            };
+
+            const getCleanPhone = (num) => {
+                if (!num) return "";
+                let cleaned = num.toString().replace(/\D/g, '');
+                if (cleaned.startsWith('0')) cleaned = '62' + cleaned.substring(1);
+                if (!cleaned.startsWith('62')) cleaned = '62' + cleaned;
+                return cleaned;
+            };
+
+            const handleWA = (num, name, loc) => {
+                const phone = getCleanPhone(num);
+                if (!phone) return notify("Nomor tidak valid", "error");
+                const text = encodeURIComponent(`Halo *${name}*, koordinasi terkait Shift GI ${loc || ''}...`);
+                window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+            };
+
+            const filteredLogs = logs.filter(l => 
+                (l.tempatKerja || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
+                (l.petugasPengganti || "").toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative select-none overflow-x-hidden">
+                    {notif && (
+                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl font-black text-[10px] uppercase tracking-widest text-white animate-bounce ${notif.type === 'success' ? 'bg-green-500' : 'bg-red-600'}`}>
+                            {notif.msg}
+                        </div>
+                    )}
+
+                    <header className="bg-white p-5 border-b-4 border-blue-900 sticky top-0 z-50 flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-2">
+                             <div className="bg-[#F9D611] p-1.5 rounded shadow-sm border-b-2 border-yellow-600">
+                                <Icon name="zap" className="text-red-600" />
+                             </div>
+                             <span className="font-black text-2xl text-blue-900 tracking-tighter">PLN</span>
+                        </div>
+                        <div className="text-right">
+                            <h1 className="font-black text-blue-900 text-lg uppercase leading-none">UPT SURABAYA</h1>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">ULTG SBU</p>
+                        </div>
+                    </header>
+
+                    <nav className="flex bg-white mx-4 mt-6 mb-2 p-1.5 rounded-full shadow-sm border border-slate-100">
+                        {['form', 'active', 'history'].map((t) => (
+                            <button 
+                                key={t}
+                                onClick={() => setView(t)}
+                                className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === t ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}
+                            >
+                                {t === 'form' ? 'Lapor' : t === 'active' ? 'Status' : 'Log'}
+                            </button>
+                        ))}
+                    </nav>
+
+                    <main className="flex-1 p-4 pb-12">
+                        {view === 'form' && (
+                            <div className="card-premium p-8 page-transition">
+                                <h2 className="text-2xl font-black text-blue-900 uppercase leading-none">Serah Terima</h2>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Input Laporan Shift Lapangan</p>
+                                
+                                <div className="mt-8 space-y-5">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Gardu Induk</label>
+                                        <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Waktu Shift</label>
+                                        <select value={shiftType} onChange={e=>setShiftType(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all custom-select">
+                                            <option value="">-- PILIH SHIFT --</option>
+                                            {shiftOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {shiftType === 'LAINNYA' && (
+                                        <div className="space-y-1 page-transition">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Input Shift Lainnya</label>
+                                            <input value={shiftLainnya} onChange={e=>setShiftLainnya(e.target.value)} className="w-full p-5 bg-blue-50 border-2 border-blue-200 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="Misal: EKSTRA PAGI" />
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Petugas On Duty</label>
+                                        <input value={petugas} onChange={e=>setPetugas(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="Nama Petugas" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nomor WhatsApp</label>
+                                        <input value={whatsapp} type="tel" onChange={e=>setWhatsapp(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 transition-all" placeholder="0812xxxx" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Keterangan / Catatan</label>
+                                        <textarea value={keterangan} onChange={e=>setKeterangan(e.target.value)} rows="3" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-semibold text-sm outline-none focus:border-blue-500 transition-all" placeholder="Kondisi GI, kendala, dll..."></textarea>
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Lampiran Foto Bukti</label>
+                                        {!foto ? (
+                                            <button 
+                                                onClick={()=>fileRef.current.click()} 
+                                                className="w-full py-12 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center text-slate-400 hover:text-blue-900 active:scale-95 transition-all"
+                                            >
+                                                <Icon name="image" size={32} />
+                                                <span className="text-[10px] font-black uppercase mt-3 tracking-widest">Ambil Foto / Pilih File</span>
+                                                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                                            </button>
+                                        ) : (
+                                            <div className="relative rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white">
+                                                <img src={foto} className="w-full h-auto" />
+                                                <button onClick={()=>setFoto(null)} className="absolute top-4 right-4 bg-red-600 text-white p-2.5 rounded-full shadow-lg active:scale-90 transition-all">✕</button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <button 
+                                        onClick={submitReport} 
+                                        disabled={loading}
+                                        className="w-full pln-gradient text-white py-6 rounded-2xl font-black text-sm uppercase tracking-[0.4em] shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                                    >
+                                        {loading ? 'MENYIMPAN...' : 'Kirim Laporan'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'active' && (
+                            <div className="space-y-4 page-transition">
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] px-2 flex items-center gap-2">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                    Status Petugas Aktif
+                                </h2>
+                                {logs.length === 0 ? (
+                                    <div className="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-100 italic text-slate-300 font-bold uppercase text-[10px]">Belum ada data</div>
+                                ) : Array.from(new Set(logs.map(l => l.tempatKerja))).map(loc => {
+                                    const l = logs.find(item => item.tempatKerja === loc);
+                                    return (
+                                        <div key={l.id} className="bg-white p-4 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col gap-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-20 h-20 rounded-2xl bg-slate-50 overflow-hidden flex-shrink-0 border border-slate-100">
+                                                    <img src={l.foto} className="w-full h-full object-cover" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                                                        <p className="text-[7px] font-black text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{l.tempatKerja}</p>
+                                                        <p className="text-[7px] font-black text-purple-600 uppercase bg-purple-50 px-2 py-0.5 rounded border border-purple-100">{l.shiftWaktu}</p>
+                                                    </div>
+                                                    <h3 className="font-black text-slate-800 uppercase truncate text-base leading-tight">{l.petugasPengganti}</h3>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-widest flex items-center gap-1">
+                                                        <Icon name="clock" size={10} /> {l.timestamp?.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} WIB
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <button 
+                                                onClick={() => handleWA(l.whatsapp, l.petugasPengganti, l.tempatKerja)} 
+                                                className="w-full bg-green-500 py-4 rounded-2xl text-white shadow-md active:scale-98 transition-all flex items-center justify-center gap-3"
+                                            >
+                                                <Icon name="wa" size={20} />
+                                                <span className="text-xs font-black uppercase tracking-widest">Hubungi Petugas</span>
+                                            </button>
+
+                                            {l.keterangan && (
+                                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                                    <p className="text-xs font-semibold text-slate-600 italic leading-relaxed">"{l.keterangan}"</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {view === 'history' && (
+                            <div className="space-y-4 page-transition">
+                                <div className="relative">
+                                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300"><Icon name="search" /></div>
+                                    <input 
+                                        className="w-full p-5 pl-16 bg-white border-2 border-slate-100 rounded-3xl font-bold uppercase text-xs outline-none focus:border-blue-900 shadow-sm"
+                                        placeholder="CARI GI / NAMA / SHIFT..."
+                                        value={searchTerm}
+                                        onChange={e=>setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    {filteredLogs.map(l => (
+                                        <div key={l.id} className="bg-white/60 p-4 px-6 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm">
+                                            <div className="flex justify-between items-center">
+                                                <div className="min-w-0">
+                                                    <div className="flex gap-2 items-center mb-1">
+                                                        <p className="text-[9px] font-black text-blue-900 uppercase leading-none">{l.tempatKerja}</p>
+                                                        <span className="text-[7px] bg-blue-100 px-1 rounded text-blue-600 font-black">{l.shiftWaktu}</span>
+                                                    </div>
+                                                    <h4 className="font-bold text-xs text-slate-700 uppercase truncate">{l.petugasPengganti}</h4>
+                                                    <p className="text-[8px] font-bold text-slate-300 mt-0.5">{l.timestamp?.toDate().toLocaleDateString('id-ID')} • {l.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleWA(l.whatsapp, l.petugasPengganti, l.tempatKerja)} 
+                                                    className="p-3 bg-green-50 text-green-500 rounded-xl active:scale-90"
+                                                >
+                                                    <Icon name="wa" size={18} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {filteredLogs.length === 0 && (
+                                        <div className="text-center py-10 text-slate-300 font-bold uppercase text-[10px]">Data tidak ditemukan</div>
+                                    )}
+                                </div>
+                                <p className="text-center text-[8px] font-black text-slate-300 uppercase tracking-widest mt-4">Log otomatis dihapus setelah 14 hari</p>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
