@@ -118,23 +118,23 @@
                 return () => unsubscribe();
             }, []);
 
-            // Fungsi Hapus Otomatis (Data > 14 hari)
+            // LOGIKA HAPUS OTOMATIS 2 MINGGU
             const cleanOldData = async () => {
                 const { getFirestore, collection, getDocs, deleteDoc, doc } = window.FB;
                 const db = getFirestore();
                 const now = new Date();
-                const twoWeeksAgo = now.getTime() - (14 * 24 * 60 * 60 * 1000);
+                const duaMingguLalu = now.getTime() - (14 * 24 * 60 * 60 * 1000);
 
                 try {
-                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'shift_reports'));
-                    querySnapshot.forEach(async (document) => {
+                    const qSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'shift_reports'));
+                    qSnap.forEach(async (document) => {
                         const data = document.data();
-                        if (data.timestamp && data.timestamp.toMillis() < twoWeeksAgo) {
+                        if (data.timestamp && data.timestamp.toMillis() < duaMingguLalu) {
                             await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_reports', document.id));
                         }
                     });
                 } catch (e) {
-                    console.error("Cleanup Error:", e);
+                    console.error("Auto Cleanup Error:", e);
                 }
             };
 
@@ -154,7 +154,10 @@
                         if (!uniqueGI[item.lokasi]) uniqueGI[item.lokasi] = item;
                     });
                     setOnDuty(Object.values(uniqueGI));
-                }, (err) => console.error("Firestore Error:", err));
+                }, (err) => {
+                    console.error("Firestore Read Error:", err);
+                    setErrorPopup("Gagal memuat data. Cek Rules di Firebase Console!");
+                });
 
                 return () => unsubscribe();
             }, [user]);
@@ -178,6 +181,8 @@
                 try {
                     const { getFirestore, collection, addDoc, Timestamp } = window.FB;
                     const db = getFirestore();
+                    if (!user) throw new Error("Akses ditolak. Cek koneksi.");
+
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_reports'), {
                         ...form,
                         shift: finalShift,
@@ -188,7 +193,8 @@
                     setForm({ lokasi: '', petugas: '', whatsapp: '', shift: 'Pagi', shiftCustom: '', keterangan: '', foto: null });
                     setView('active');
                 } catch (e) { 
-                    setErrorPopup("Gagal kirim. Cek koneksi Anda."); 
+                    console.error("Submit Error:", e);
+                    setErrorPopup(`Gagal kirim. Pastikan Rules Firebase sudah di-Publish!`); 
                 }
                 setLoading(false);
             };
@@ -223,7 +229,7 @@
             };
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative overflow-x-hidden">
+                <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative overflow-x-hidden text-slate-900">
                     <header className="bg-white p-5 border-b-4 border-blue-900 flex justify-between items-center shadow-sm sticky top-0 z-50">
                         <div className="flex items-center gap-2">
                              <div className="bg-[#F9D611] p-1.5 rounded shadow-sm border-b-2 border-yellow-600">
@@ -252,7 +258,12 @@
                                 <div className="space-y-4">
                                     <div className="space-y-1">
                                         <p className="text-[9px] font-black text-slate-400 uppercase ml-2">Lokasi Gardu Induk</p>
-                                        <input placeholder="" value={form.lokasi} onChange={e=>setForm({...form, lokasi: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" />
+                                        <input 
+                                            placeholder="CONTOH: GI WARU" 
+                                            value={form.lokasi} 
+                                            onChange={e=>setForm({...form, lokasi: e.target.value})} 
+                                            className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" 
+                                        />
                                     </div>
 
                                     <div className="space-y-1">
@@ -275,12 +286,12 @@
 
                                     <div className="space-y-1">
                                         <p className="text-[9px] font-black text-slate-400 uppercase ml-2">Keterangan Tambahan</p>
-                                        <textarea placeholder="" value={form.keterangan} onChange={e=>setForm({...form, keterangan: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none h-24" />
+                                        <textarea placeholder="CATATAN PEKERJAAN" value={form.keterangan} onChange={e=>setForm({...form, keterangan: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none h-24" />
                                     </div>
 
                                     <div className="space-y-1">
                                         <p className="text-[9px] font-black text-slate-400 uppercase ml-2">Nomor WhatsApp Petugas</p>
-                                        <input placeholder="CONTOH: 08123456xxxx" type="tel" value={form.whatsapp} onChange={e=>setForm({...form, whatsapp: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none" />
+                                        <input placeholder="08123456xxxx" type="tel" value={form.whatsapp} onChange={e=>setForm({...form, whatsapp: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none" />
                                     </div>
 
                                     <div onClick={() => fileRef.current.click()} className="w-full h-48 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all">
