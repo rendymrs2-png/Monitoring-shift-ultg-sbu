@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Monitoring Shift PLN UPT Surabaya</title>
+    <title>Monitoring Shift PLN ULTG SBU</title>
     <!-- Script Dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -25,13 +25,6 @@
             from { opacity: 0; transform: translateY(15px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .custom-select {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%231e3a8a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 1rem center;
-            background-size: 1.5em;
-        }
     </style>
 </head>
 <body>
@@ -40,17 +33,15 @@
     <!-- Firebase SDK Loader -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getDocs, deleteDoc, doc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Global Firebase Object for Babel Script
-        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, deleteDoc, doc, getDocs };
+        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, getDocs, deleteDoc, doc, where };
     </script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Gunakan config yang Anda kirimkan tadi
         const firebaseConfig = {
             apiKey: "AIzaSyAG60SGFpT5PSqT0dA_D5Nv4Bg8YvkoBqY",
             authDomain: "monitoring-shift.firebaseapp.com",
@@ -66,7 +57,6 @@
                 image: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
                 zap: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
                 wa: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-10.8 8.38 8.38 0 0 1 3.8.9L21 4.5l-1 4.5 1 2.5z"></path></svg>,
-                search: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
                 clock: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             };
             return icons[name] || null;
@@ -74,123 +64,113 @@
 
         function App() {
             const [view, setView] = useState('form');
-            const [user, setUser] = useState(null);
             const [logs, setLogs] = useState([]);
+            const [onDuty, setOnDuty] = useState([]);
             const [loading, setLoading] = useState(false);
-            const [searchTerm, setSearchTerm] = useState('');
-            const [notif, setNotif] = useState(null);
             const [status, setStatus] = useState("Offline");
             
-            // Form States
-            const [lokasi, setLokasi] = useState('');
-            const [petugas, setPetugas] = useState('');
-            const [whatsapp, setWhatsapp] = useState('');
-            const [shiftType, setShiftType] = useState('');
-            const [shiftLainnya, setShiftLainnya] = useState('');
-            const [keterangan, setKeterangan] = useState('');
-            const [foto, setFoto] = useState(null);
-            
+            const [form, setForm] = useState({ lokasi: '', petugas: '', whatsapp: '', shift: '', foto: null });
             const fileRef = useRef(null);
-            const shiftOptions = ["SHIFT 1", "SHIFT 2", "SHIFT 3", "LAINNYA"];
 
             useEffect(() => {
-                const init = async () => {
-                    const checkFB = setInterval(async () => {
-                        if (window.FB) {
-                            clearInterval(checkFB);
-                            const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, collection, onSnapshot, query, orderBy } = window.FB;
-                            
-                            try {
-                                const app = initializeApp(firebaseConfig);
-                                const auth = getAuth(app);
-                                const db = getFirestore(app);
-
-                                await signInAnonymously(auth);
-
-                                onAuthStateChanged(auth, (u) => {
-                                    setUser(u);
-                                    if (u) {
-                                        setStatus("Online");
-                                        const q = query(collection(db, "shift_reports"), orderBy("timestamp", "desc"));
-                                        onSnapshot(q, (snap) => {
-                                            setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                                        });
-                                    }
-                                });
-                            } catch (e) { 
-                                setStatus("Error");
-                                console.error(e); 
-                            }
-                        }
-                    }, 500);
-                };
-                init();
+                const checkFB = setInterval(() => {
+                    if (window.FB) {
+                        clearInterval(checkFB);
+                        startApp();
+                    }
+                }, 500);
             }, []);
 
-            const notify = (msg, type = "success") => {
-                setNotif({ msg, type });
-                setTimeout(() => setNotif(null), 3000);
+            const cleanupOldLogs = async (db) => {
+                const { collection, getDocs, deleteDoc, doc, Timestamp } = window.FB;
+                try {
+                    // Hitung waktu 14 hari yang lalu
+                    const fourteenDaysAgo = new Date();
+                    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+                    const threshold = Timestamp.fromDate(fourteenDaysAgo);
+
+                    const qSnap = await getDocs(collection(db, "shift_reports"));
+                    let deletedCount = 0;
+                    
+                    qSnap.forEach(async (document) => {
+                        const data = document.data();
+                        if (data.timestamp && data.timestamp.toMillis() < threshold.toMillis()) {
+                            await deleteDoc(doc(db, "shift_reports", document.id));
+                            deletedCount++;
+                        }
+                    });
+                    
+                    if(deletedCount > 0) console.log(`Dibersihkan: ${deletedCount} log lama dihapus.`);
+                } catch (e) {
+                    console.error("Gagal membersihkan log lama:", e);
+                }
             };
 
-            const handleFileUpload = (e) => {
+            const startApp = async () => {
+                const { initializeApp, getFirestore, getAuth, signInAnonymously, onAuthStateChanged, collection, query, orderBy, onSnapshot } = window.FB;
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const db = getFirestore(app);
+                    const auth = getAuth(app);
+                    
+                    await signInAnonymously(auth);
+                    
+                    // Jalankan cleanup setiap aplikasi dibuka
+                    cleanupOldLogs(db);
+
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            setStatus("Online");
+                            const q = query(collection(db, "shift_reports"), orderBy("timestamp", "desc"));
+                            onSnapshot(q, (snap) => {
+                                const allData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                                setLogs(allData);
+                                
+                                // LOGIKA ON DUTY: Data terbaru per Gardu Induk
+                                const uniqueGI = {};
+                                allData.forEach(item => {
+                                    if (!uniqueGI[item.lokasi]) {
+                                        uniqueGI[item.lokasi] = item;
+                                    }
+                                });
+                                setOnDuty(Object.values(uniqueGI));
+                            });
+                        }
+                    });
+                } catch (e) { setStatus("Error"); }
+            };
+
+            const handleFile = (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    if (file.size > 2 * 1024 * 1024) return notify("Maksimal foto 2MB", "error");
                     const reader = new FileReader();
-                    reader.onload = () => setFoto(reader.result);
+                    reader.onload = () => setForm({...form, foto: reader.result});
                     reader.readAsDataURL(file);
                 }
             };
 
-            const submitReport = async () => {
-                const finalShift = shiftType === 'LAINNYA' ? shiftLainnya : shiftType;
-                if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) return notify("Lengkapi data & foto!", "error");
-                
+            const submit = async () => {
+                if (!form.lokasi || !form.petugas || !form.foto) return alert("Lengkapi data & foto!");
                 setLoading(true);
                 try {
                     const { getFirestore, collection, addDoc, Timestamp } = window.FB;
                     const db = getFirestore();
                     await addDoc(collection(db, "shift_reports"), {
-                        lokasi: lokasi.toUpperCase(),
-                        petugas: petugas.toUpperCase(),
-                        whatsapp: whatsapp.replace(/\D/g, ''),
-                        shift: finalShift.toUpperCase(),
-                        keterangan: keterangan,
-                        foto: foto,
+                        ...form,
+                        lokasi: form.lokasi.toUpperCase().trim(),
+                        petugas: form.petugas.toUpperCase().trim(),
                         timestamp: Timestamp.now()
                     });
-                    
-                    setLokasi(''); setPetugas(''); setWhatsapp(''); setShiftType(''); setShiftLainnya(''); setKeterangan(''); setFoto(null);
+                    setForm({ lokasi: '', petugas: '', whatsapp: '', shift: '', foto: null });
                     setView('active');
-                    notify("Laporan Terkirim!");
-                } catch (e) { 
-                    notify("Gagal mengirim data!", "error"); 
-                    console.error(e);
-                }
+                } catch (e) { alert("Gagal Simpan!"); }
                 setLoading(false);
             };
 
-            const handleWA = (num, name, loc) => {
-                let phone = num.replace(/\D/g, '');
-                if (phone.startsWith('0')) phone = '62' + phone.substring(1);
-                const text = encodeURIComponent(`Halo *${name}*, koordinasi Shift GI ${loc}...`);
-                window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
-            };
-
-            const filteredLogs = logs.filter(l => 
-                (l.lokasi || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
-                (l.petugas || "").toLowerCase().includes(searchTerm.toLowerCase())
-            );
-
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative overflow-x-hidden">
-                    {notif && (
-                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl font-black text-[10px] uppercase tracking-widest text-white animate-bounce ${notif.type === 'success' ? 'bg-green-500' : 'bg-red-600'}`}>
-                            {notif.msg}
-                        </div>
-                    )}
-
-                    <header className="bg-white p-5 border-b-4 border-blue-900 sticky top-0 z-50 flex justify-between items-center shadow-sm">
+                    {/* Header Terupdate: ULTG SBU */}
+                    <header className="bg-white p-5 border-b-4 border-blue-900 flex justify-between items-center shadow-sm sticky top-0 z-50">
                         <div className="flex items-center gap-2">
                              <div className="bg-[#F9D611] p-1.5 rounded shadow-sm border-b-2 border-yellow-600">
                                 <Icon name="zap" className="text-red-600" />
@@ -198,48 +178,33 @@
                              <span className="font-black text-2xl text-blue-900 tracking-tighter">PLN</span>
                         </div>
                         <div className="text-right">
-                            <h1 className="font-black text-blue-900 text-lg uppercase leading-none">UPT SURABAYA</h1>
-                            <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${status === "Online" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
-                                {status}
-                            </span>
+                            <h1 className="font-black text-blue-900 text-lg uppercase leading-none tracking-tight">ULTG SBU</h1>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">Monitoring Shift</p>
                         </div>
                     </header>
 
-                    <nav className="flex bg-white mx-4 mt-6 mb-2 p-1.5 rounded-full shadow-sm border border-slate-100">
-                        {['form', 'active', 'history'].map((t) => (
-                            <button 
-                                key={t}
-                                onClick={() => setView(t)}
-                                className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === t ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}
-                            >
-                                {t === 'form' ? 'Lapor' : t === 'active' ? 'Status' : 'Log'}
-                            </button>
-                        ))}
+                    <nav className="flex bg-white mx-4 mt-6 p-1.5 rounded-full shadow-sm border border-slate-100">
+                        <button onClick={() => setView('form')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'form' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Lapor</button>
+                        <button onClick={() => setView('active')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'active' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Status</button>
+                        <button onClick={() => setView('logs')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'logs' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Log</button>
                     </nav>
 
                     <main className="flex-1 p-4 pb-12">
                         {view === 'form' && (
-                            <div className="card-premium p-8 page-transition">
+                            <div className="card-premium p-8 space-y-5 page-transition">
                                 <h2 className="text-xl font-black text-blue-900 uppercase">Input Laporan</h2>
-                                <div className="mt-6 space-y-4">
-                                    <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" placeholder="GARDU INDUK" />
-                                    <select value={shiftType} onChange={e=>setShiftType(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 custom-select">
-                                        <option value="">-- PILIH SHIFT --</option>
-                                        {shiftOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                    </select>
-                                    {shiftType === 'LAINNYA' && (
-                                        <input value={shiftLainnya} onChange={e=>setShiftLainnya(e.target.value)} className="w-full p-4 bg-blue-50 border-2 border-blue-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" placeholder="NAMA SHIFT" />
-                                    )}
-                                    <input value={petugas} onChange={e=>setPetugas(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" placeholder="NAMA PETUGAS" />
-                                    <input value={whatsapp} type="tel" onChange={e=>setWhatsapp(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" placeholder="WA (0812...)" />
+                                <div className="space-y-4">
+                                    <input placeholder="GARDU INDUK" value={form.lokasi} onChange={e=>setForm({...form, lokasi: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" />
+                                    <input placeholder="NAMA PETUGAS" value={form.petugas} onChange={e=>setForm({...form, petugas: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" />
+                                    <input placeholder="WHATSAPP (0812...)" type="tel" value={form.whatsapp} onChange={e=>setForm({...form, whatsapp: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" />
                                     
-                                    <div onClick={()=>fileRef.current.click()} className="w-full h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden cursor-pointer">
-                                        {foto ? <img src={foto} className="w-full h-full object-cover" /> : <p className="text-[10px] font-black uppercase text-slate-400">Klik Ambil Foto</p>}
-                                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                                    <div onClick={() => fileRef.current.click()} className="w-full h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all">
+                                        {form.foto ? <img src={form.foto} className="w-full h-full object-cover" /> : <div className="text-center"><Icon name="image" size={32} className="mx-auto text-slate-300" /><p className="text-[10px] font-black uppercase text-slate-400 mt-2">Ambil Foto</p></div>}
+                                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
                                     </div>
 
-                                    <button onClick={submitReport} disabled={loading} className="w-full pln-gradient text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-50">
-                                        {loading ? 'MENYIMPAN...' : 'Kirim Laporan'}
+                                    <button onClick={submit} disabled={loading} className="w-full pln-gradient text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-50">
+                                        {loading ? 'MEMPROSES...' : 'KIRIM LAPORAN'}
                                     </button>
                                 </div>
                             </div>
@@ -247,20 +212,27 @@
 
                         {view === 'active' && (
                             <div className="space-y-4 page-transition">
-                                {logs.length === 0 ? (
-                                    <div className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Belum ada data</div>
-                                ) : logs.map(l => (
+                                <div className="flex items-center justify-between px-2 mb-2">
+                                    <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest">Petugas On Duty</h2>
+                                    <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-1 rounded-full uppercase">{onDuty.length} Lokasi</span>
+                                </div>
+                                {onDuty.length === 0 ? <p className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Belum ada petugas aktif</p> : onDuty.map(l => (
                                     <div key={l.id} className="bg-white p-4 rounded-[2.5rem] shadow-sm border border-slate-100 flex gap-4">
-                                        <div className="w-20 h-20 rounded-2xl bg-slate-50 overflow-hidden flex-shrink-0">
+                                        <div className="w-20 h-20 rounded-2xl bg-slate-50 overflow-hidden flex-shrink-0 border border-slate-100">
                                             <img src={l.foto} className="w-full h-full object-cover" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-[8px] font-black text-blue-600 uppercase mb-1">{l.lokasi} - {l.shift}</p>
+                                            <p className="text-[7px] font-black text-white uppercase bg-blue-600 px-2 py-0.5 rounded w-fit mb-1">{l.lokasi}</p>
                                             <h3 className="font-black text-slate-800 uppercase truncate text-sm">{l.petugas}</h3>
                                             <div className="flex items-center gap-2 mt-2">
-                                                <button onClick={() => handleWA(l.whatsapp, l.petugas, l.lokasi)} className="p-2 bg-green-500 text-white rounded-lg"><Icon name="wa" size={14} /></button>
-                                                <div className="flex items-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
-                                                    <Icon name="clock" size={10} /> {l.timestamp?.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} WIB
+                                                <a href={`https://wa.me/${l.whatsapp?.replace(/\D/g, '')}`} target="_blank" className="p-2 bg-green-500 text-white rounded-lg active:scale-90 transition-all shadow-md shadow-green-100">
+                                                    <Icon name="wa" size={14} />
+                                                </a>
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                                                        <Icon name="clock" size={10} /> {l.timestamp?.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} WIB
+                                                    </div>
+                                                    <span className="text-[7px] text-green-500 font-bold uppercase animate-pulse">● Active Now</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -269,21 +241,24 @@
                             </div>
                         )}
 
-                        {view === 'history' && (
-                            <div className="space-y-4 page-transition">
-                                <input className="w-full p-4 bg-white border-2 border-slate-100 rounded-3xl font-bold uppercase text-xs outline-none focus:border-blue-900" placeholder="CARI GI / NAMA..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
-                                {filteredLogs.map(l => (
-                                    <div key={l.id} className="bg-white/60 p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
-                                        <div>
-                                            <p className="text-[8px] font-black text-blue-900 uppercase">{l.lokasi}</p>
-                                            <h4 className="font-bold text-xs text-slate-700 uppercase">{l.petugas}</h4>
-                                            <p className="text-[8px] font-bold text-slate-300">{l.timestamp?.toDate().toLocaleDateString('id-ID')} {l.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                        </div>
-                                        <div className="w-10 h-10 rounded-full overflow-hidden border">
-                                            <img src={l.foto} className="w-full h-full object-cover" />
+                        {view === 'logs' && (
+                            <div className="space-y-3 page-transition">
+                                <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest px-2">Riwayat Laporan (14 Hari Terakhir)</h2>
+                                {logs.length === 0 ? <p className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Log Kosong</p> : logs.map(l => (
+                                    <div key={l.id} className="bg-white/60 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full overflow-hidden border bg-slate-100">
+                                                <img src={l.foto} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[7px] font-black text-blue-900 uppercase">{l.lokasi}</p>
+                                                <p className="font-bold text-[11px] text-slate-700 uppercase">{l.petugas}</p>
+                                                <p className="text-[7px] text-slate-400 font-medium italic">{l.timestamp?.toDate().toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
+                                <p className="text-center text-[8px] font-bold text-slate-300 uppercase tracking-widest mt-4">Log otomatis terhapus setelah 2 minggu</p>
                             </div>
                         )}
                     </main>
