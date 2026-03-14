@@ -50,6 +50,16 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Configuration Fix: Pastikan config terisi atau mengambil dari environment
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
+            apiKey: "", // Masukkan API Key Firebase Anda di sini jika deploy manual
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
+
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
                 image: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
@@ -80,52 +90,59 @@
             
             const fileRef = useRef(null);
 
-            const appId = "pln-shift-upt-surabaya";
-            const firebaseConfig = JSON.parse(window.__firebase_config || "{}");
+            const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : "pln-shift-upt-surabaya";
 
             const shiftOptions = ["SHIFT 1", "SHIFT 2", "SHIFT 3", "LAINNYA"];
 
             useEffect(() => {
                 const init = async () => {
-                    if (!window.FB) return;
-                    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, getDocs, deleteDoc, doc } = window.FB;
-                    
-                    try {
-                        const app = initializeApp(firebaseConfig);
-                        const auth = getAuth(app);
-                        const db = getFirestore(app);
+                    // Tunggu hingga library Firebase termuat di window.FB
+                    const checkFB = setInterval(async () => {
+                        if (window.FB) {
+                            clearInterval(checkFB);
+                            const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, getDocs, deleteDoc, doc } = window.FB;
+                            
+                            try {
+                                const app = initializeApp(firebaseConfig);
+                                const auth = getAuth(app);
+                                const db = getFirestore(app);
 
-                        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-                            await signInWithCustomToken(auth, window.__initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                                if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                                    await signInWithCustomToken(auth, window.__initial_auth_token);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
 
-                        onAuthStateChanged(auth, async (u) => {
-                            setUser(u);
-                            if (u) {
-                                const path = `/artifacts/${appId}/public/data/shift_logs`;
-                                const twoWeeksAgo = new Date();
-                                twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-                                
-                                const colRef = collection(db, path);
-                                
-                                const snapClean = await getDocs(colRef);
-                                snapClean.forEach(async (document) => {
-                                    const data = document.data();
-                                    if (data.timestamp && data.timestamp.toDate() < twoWeeksAgo) {
-                                        await deleteDoc(doc(db, path, document.id));
+                                onAuthStateChanged(auth, async (u) => {
+                                    setUser(u);
+                                    if (u) {
+                                        const path = `/artifacts/${appId}/public/data/shift_logs`;
+                                        const colRef = collection(db, path);
+                                        
+                                        // Auto-cleanup data lama (> 14 hari)
+                                        const twoWeeksAgo = new Date();
+                                        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+                                        const snapClean = await getDocs(colRef);
+                                        snapClean.forEach(async (document) => {
+                                            const data = document.data();
+                                            if (data.timestamp && data.timestamp.toDate() < twoWeeksAgo) {
+                                                await deleteDoc(doc(db, path, document.id));
+                                            }
+                                        });
+
+                                        const unsubscribe = onSnapshot(colRef, (snap) => {
+                                            const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                            setLogs(rawData.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+                                        }, (err) => console.error("Firestore error:", err));
+                                        return () => unsubscribe();
                                     }
                                 });
-
-                                const unsubscribe = onSnapshot(colRef, (snap) => {
-                                    const rawData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                    setLogs(rawData.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
-                                }, (err) => console.error("Firestore error:", err));
-                                return () => unsubscribe();
+                            } catch (e) { 
+                                console.error("Init Error:", e);
+                                notify("Koneksi Database Gagal", "error");
                             }
-                        });
-                    } catch (e) { console.error("Init Error:", e); }
+                        }
+                    }, 500);
                 };
                 init();
             }, []);
@@ -138,7 +155,7 @@
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    if (file.size > 3 * 1024 * 1024) return notify("Ukuran file maks 3MB", "error");
+                    if (file.size > 2 * 1024 * 1024) return notify("Ukuran file maks 2MB", "error");
                     const reader = new FileReader();
                     reader.onload = () => setFoto(reader.result);
                     reader.readAsDataURL(file);
@@ -148,12 +165,14 @@
             const submitReport = async () => {
                 const finalShift = shiftType === 'LAINNYA' ? shiftLainnya : shiftType;
                 if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) return notify("Lengkapi data & foto!", "error");
+                if (!user) return notify("Sesi tidak valid, refresh halaman", "error");
                 
                 setLoading(true);
                 try {
                     const { getFirestore, collection, addDoc, Timestamp } = window.FB;
                     const db = getFirestore();
-                    await addDoc(collection(db, `/artifacts/${appId}/public/data/shift_logs`), {
+                    
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_logs'), {
                         tempatKerja: lokasi.toUpperCase(),
                         petugasPengganti: petugas.toUpperCase(),
                         whatsapp: whatsapp.replace(/[^0-9]/g, ''),
@@ -167,7 +186,10 @@
                     setLokasi(''); setPetugas(''); setWhatsapp(''); setShiftType(''); setShiftLainnya(''); setKeterangan(''); setFoto(null);
                     setView('active');
                     notify("Laporan Terkirim!");
-                } catch (e) { notify("Gagal mengirim", "error"); }
+                } catch (e) { 
+                    console.error(e);
+                    notify("Gagal mengirim ke database", "error"); 
+                }
                 setLoading(false);
             };
 
@@ -233,7 +255,7 @@
                                 <div className="mt-8 space-y-5">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Gardu Induk</label>
-                                        <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="" />
+                                        <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="MISAL: GI WARU" />
                                     </div>
 
                                     <div className="space-y-1">
