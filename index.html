@@ -40,8 +40,14 @@
     <!-- Firebase SDK Loader -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+  apiKey: "AIzaSyBssxGcZeanJ01FUWggtEL1wk9ornz5S3E",
+  authDomain: "monitoring-shift-ultgsbu.firebaseapp.com",
+  projectId: "monitoring-shift-ultgsbu",
+  storageBucket: "monitoring-shift-ultgsbu.firebasestorage.app",
+  messagingSenderId: "312094170952",
+  appId: "1:312094170952:web:0d393c5dd24065e6ff9d7d"
+};
 
         // Global Firebase Object for Babel Script
         window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, deleteDoc, doc, getDocs };
