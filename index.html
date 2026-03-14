@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Monitoring Shift PLN ULTG SBU</title>
+    <title>Monitoring Shift PLN UPT Surabaya</title>
     <!-- Script Dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -24,6 +24,15 @@
         @keyframes slideUp {
             from { opacity: 0; transform: translateY(15px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        .search-input {
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .search-input:focus {
+            border-color: #1e3a8a;
+            background: white;
+            box-shadow: 0 4px 12px rgba(30, 58, 138, 0.08);
         }
     </style>
 </head>
@@ -57,7 +66,8 @@
                 image: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
                 zap: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
                 wa: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-10.8 8.38 8.38 0 0 1 3.8.9L21 4.5l-1 4.5 1 2.5z"></path></svg>,
-                clock: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                clock: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>,
+                search: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             };
             return icons[name] || null;
         };
@@ -67,7 +77,7 @@
             const [logs, setLogs] = useState([]);
             const [onDuty, setOnDuty] = useState([]);
             const [loading, setLoading] = useState(false);
-            const [status, setStatus] = useState("Offline");
+            const [searchTerm, setSearchTerm] = useState("");
             
             const [form, setForm] = useState({ lokasi: '', petugas: '', whatsapp: '', shift: '', foto: null });
             const fileRef = useRef(null);
@@ -81,28 +91,34 @@
                 }, 500);
             }, []);
 
+            // Fungsi hapus log otomatis > 14 hari, tapi sisakan data 24 jam terakhir
             const cleanupOldLogs = async (db) => {
                 const { collection, getDocs, deleteDoc, doc, Timestamp } = window.FB;
                 try {
-                    // Hitung waktu 14 hari yang lalu
-                    const fourteenDaysAgo = new Date();
+                    const now = new Date();
+                    
+                    const fourteenDaysAgo = new Date(now);
                     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-                    const threshold = Timestamp.fromDate(fourteenDaysAgo);
+                    
+                    const oneDayAgo = new Date(now);
+                    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+                    const thresholdOld = Timestamp.fromDate(fourteenDaysAgo);
+                    const thresholdSafe = Timestamp.fromDate(oneDayAgo);
 
                     const qSnap = await getDocs(collection(db, "shift_reports"));
-                    let deletedCount = 0;
                     
                     qSnap.forEach(async (document) => {
                         const data = document.data();
-                        if (data.timestamp && data.timestamp.toMillis() < threshold.toMillis()) {
+                        const docTime = data.timestamp?.toMillis();
+                        
+                        // Hapus jika lebih tua dari 14 hari DAN tidak termasuk dalam 24 jam terakhir (safety margin)
+                        if (docTime < thresholdOld.toMillis() && docTime < thresholdSafe.toMillis()) {
                             await deleteDoc(doc(db, "shift_reports", document.id));
-                            deletedCount++;
                         }
                     });
-                    
-                    if(deletedCount > 0) console.log(`Dibersihkan: ${deletedCount} log lama dihapus.`);
                 } catch (e) {
-                    console.error("Gagal membersihkan log lama:", e);
+                    console.error("Cleanup error:", e);
                 }
             };
 
@@ -114,19 +130,16 @@
                     const auth = getAuth(app);
                     
                     await signInAnonymously(auth);
-                    
-                    // Jalankan cleanup setiap aplikasi dibuka
                     cleanupOldLogs(db);
 
                     onAuthStateChanged(auth, (user) => {
                         if (user) {
-                            setStatus("Online");
                             const q = query(collection(db, "shift_reports"), orderBy("timestamp", "desc"));
                             onSnapshot(q, (snap) => {
                                 const allData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                                 setLogs(allData);
                                 
-                                // LOGIKA ON DUTY: Data terbaru per Gardu Induk
+                                // On Duty: Petugas terbaru per Gardu Induk
                                 const uniqueGI = {};
                                 allData.forEach(item => {
                                     if (!uniqueGI[item.lokasi]) {
@@ -137,7 +150,7 @@
                             });
                         }
                     });
-                } catch (e) { setStatus("Error"); }
+                } catch (e) { console.error("FB Init Error"); }
             };
 
             const handleFile = (e) => {
@@ -150,7 +163,7 @@
             };
 
             const submit = async () => {
-                if (!form.lokasi || !form.petugas || !form.foto) return alert("Lengkapi data & foto!");
+                if (!form.lokasi || !form.petugas || !form.foto) return alert("Lengkapi data!");
                 setLoading(true);
                 try {
                     const { getFirestore, collection, addDoc, Timestamp } = window.FB;
@@ -163,13 +176,23 @@
                     });
                     setForm({ lokasi: '', petugas: '', whatsapp: '', shift: '', foto: null });
                     setView('active');
-                } catch (e) { alert("Gagal Simpan!"); }
+                } catch (e) { alert("Gagal kirim!"); }
                 setLoading(false);
             };
 
+            // Filter Logic untuk Pencarian
+            const filteredOnDuty = onDuty.filter(item => 
+                item.petugas.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                item.lokasi.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            const filteredLogs = logs.filter(item => 
+                item.petugas.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                item.lokasi.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative overflow-x-hidden">
-                    {/* Header Terupdate: ULTG SBU */}
                     <header className="bg-white p-5 border-b-4 border-blue-900 flex justify-between items-center shadow-sm sticky top-0 z-50">
                         <div className="flex items-center gap-2">
                              <div className="bg-[#F9D611] p-1.5 rounded shadow-sm border-b-2 border-yellow-600">
@@ -178,33 +201,51 @@
                              <span className="font-black text-2xl text-blue-900 tracking-tighter">PLN</span>
                         </div>
                         <div className="text-right">
-                            <h1 className="font-black text-blue-900 text-lg uppercase leading-none tracking-tight">ULTG SBU</h1>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">Monitoring Shift</p>
+                            <h1 className="font-black text-blue-900 text-lg uppercase leading-none tracking-tight">UPT SURABAYA</h1>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">ULTG SBU</p>
                         </div>
                     </header>
 
                     <nav className="flex bg-white mx-4 mt-6 p-1.5 rounded-full shadow-sm border border-slate-100">
-                        <button onClick={() => setView('form')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'form' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Lapor</button>
-                        <button onClick={() => setView('active')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'active' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Status</button>
-                        <button onClick={() => setView('logs')} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'logs' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Log</button>
+                        <button onClick={() => { setView('form'); setSearchTerm(""); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'form' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Lapor</button>
+                        <button onClick={() => { setView('active'); setSearchTerm(""); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'active' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Status</button>
+                        <button onClick={() => { setView('logs'); setSearchTerm(""); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === 'logs' ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}>Log</button>
                     </nav>
+
+                    {/* Search Bar (Tampil di menu Status dan Log) */}
+                    {(view === 'active' || view === 'logs') && (
+                        <div className="px-4 mt-4 page-transition">
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                                    <Icon name="search" size={16} className="text-slate-400 group-focus-within:text-blue-900" />
+                                </div>
+                                <input 
+                                    type="text" 
+                                    placeholder="CARI PETUGAS ATAU GARDU INDUK..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full bg-slate-100/50 p-4 pl-12 rounded-2xl text-[10px] font-bold uppercase tracking-wider outline-none search-input"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <main className="flex-1 p-4 pb-12">
                         {view === 'form' && (
                             <div className="card-premium p-8 space-y-5 page-transition">
-                                <h2 className="text-xl font-black text-blue-900 uppercase">Input Laporan</h2>
+                                <h2 className="text-xl font-black text-blue-900 uppercase tracking-tight">Input Laporan</h2>
                                 <div className="space-y-4">
-                                    <input placeholder="GARDU INDUK" value={form.lokasi} onChange={e=>setForm({...form, lokasi: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" />
-                                    <input placeholder="NAMA PETUGAS" value={form.petugas} onChange={e=>setForm({...form, petugas: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500" />
-                                    <input placeholder="WHATSAPP (0812...)" type="tel" value={form.whatsapp} onChange={e=>setForm({...form, whatsapp: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" />
+                                    <input placeholder="GARDU INDUK" value={form.lokasi} onChange={e=>setForm({...form, lokasi: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" />
+                                    <input placeholder="NAMA PETUGAS" value={form.petugas} onChange={e=>setForm({...form, petugas: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" />
+                                    <input placeholder="WHATSAPP (08...)" type="tel" value={form.whatsapp} onChange={e=>setForm({...form, whatsapp: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 transition-all" />
                                     
-                                    <div onClick={() => fileRef.current.click()} className="w-full h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all">
-                                        {form.foto ? <img src={form.foto} className="w-full h-full object-cover" /> : <div className="text-center"><Icon name="image" size={32} className="mx-auto text-slate-300" /><p className="text-[10px] font-black uppercase text-slate-400 mt-2">Ambil Foto</p></div>}
+                                    <div onClick={() => fileRef.current.click()} className="w-full h-44 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all">
+                                        {form.foto ? <img src={form.foto} className="w-full h-full object-cover" /> : <div className="text-center"><Icon name="image" size={32} className="mx-auto text-slate-300" /><p className="text-[10px] font-black uppercase text-slate-400 mt-2">Lampirkan Foto</p></div>}
                                         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
                                     </div>
 
-                                    <button onClick={submit} disabled={loading} className="w-full pln-gradient text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-50">
-                                        {loading ? 'MEMPROSES...' : 'KIRIM LAPORAN'}
+                                    <button onClick={submit} disabled={loading} className="w-full pln-gradient text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-50 transition-all">
+                                        {loading ? 'MENGIRIM...' : 'KIRIM LAPORAN'}
                                     </button>
                                 </div>
                             </div>
@@ -213,19 +254,23 @@
                         {view === 'active' && (
                             <div className="space-y-4 page-transition">
                                 <div className="flex items-center justify-between px-2 mb-2">
-                                    <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest">Petugas On Duty</h2>
-                                    <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-1 rounded-full uppercase">{onDuty.length} Lokasi</span>
+                                    <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest">On Duty {searchTerm && `(${filteredOnDuty.length})`}</h2>
+                                    <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-1 rounded-full uppercase">{filteredOnDuty.length} GI</span>
                                 </div>
-                                {onDuty.length === 0 ? <p className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Belum ada petugas aktif</p> : onDuty.map(l => (
-                                    <div key={l.id} className="bg-white p-4 rounded-[2.5rem] shadow-sm border border-slate-100 flex gap-4">
-                                        <div className="w-20 h-20 rounded-2xl bg-slate-50 overflow-hidden flex-shrink-0 border border-slate-100">
+                                {filteredOnDuty.length === 0 ? (
+                                    <div className="text-center py-20">
+                                        <p className="text-slate-300 font-bold uppercase text-[10px]">Data tidak ditemukan</p>
+                                    </div>
+                                ) : filteredOnDuty.map(l => (
+                                    <div key={l.id} className="bg-white p-4 rounded-[2.5rem] shadow-sm border border-slate-100 flex gap-4 transition-all hover:shadow-md">
+                                        <div className="w-20 h-20 rounded-2xl bg-slate-50 overflow-hidden flex-shrink-0 border border-slate-100 shadow-inner">
                                             <img src={l.foto} className="w-full h-full object-cover" />
                                         </div>
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex-1 min-w-0 flex flex-col justify-center">
                                             <p className="text-[7px] font-black text-white uppercase bg-blue-600 px-2 py-0.5 rounded w-fit mb-1">{l.lokasi}</p>
-                                            <h3 className="font-black text-slate-800 uppercase truncate text-sm">{l.petugas}</h3>
+                                            <h3 className="font-black text-slate-800 uppercase truncate text-sm leading-tight">{l.petugas}</h3>
                                             <div className="flex items-center gap-2 mt-2">
-                                                <a href={`https://wa.me/${l.whatsapp?.replace(/\D/g, '')}`} target="_blank" className="p-2 bg-green-500 text-white rounded-lg active:scale-90 transition-all shadow-md shadow-green-100">
+                                                <a href={`https://wa.me/${l.whatsapp?.replace(/\D/g, '')}`} target="_blank" className="p-2 bg-green-500 text-white rounded-lg active:scale-90 transition-all shadow-lg shadow-green-100">
                                                     <Icon name="wa" size={14} />
                                                 </a>
                                                 <div className="flex flex-col">
@@ -243,22 +288,24 @@
 
                         {view === 'logs' && (
                             <div className="space-y-3 page-transition">
-                                <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest px-2">Riwayat Laporan (14 Hari Terakhir)</h2>
-                                {logs.length === 0 ? <p className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Log Kosong</p> : logs.map(l => (
-                                    <div key={l.id} className="bg-white/60 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                <h2 className="font-black text-blue-900 text-xs uppercase tracking-widest px-2">Riwayat {searchTerm && `(${filteredLogs.length})`}</h2>
+                                {filteredLogs.length === 0 ? (
+                                    <p className="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Riwayat tidak ditemukan</p>
+                                ) : filteredLogs.map(l => (
+                                    <div key={l.id} className="bg-white/60 p-3 rounded-2xl border border-slate-100 flex items-center justify-between hover:bg-white transition-all">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full overflow-hidden border bg-slate-100">
+                                            <div className="w-10 h-10 rounded-full overflow-hidden border border-white bg-slate-100 shadow-sm">
                                                 <img src={l.foto} className="w-full h-full object-cover" />
                                             </div>
                                             <div>
                                                 <p className="text-[7px] font-black text-blue-900 uppercase">{l.lokasi}</p>
-                                                <p className="font-bold text-[11px] text-slate-700 uppercase">{l.petugas}</p>
-                                                <p className="text-[7px] text-slate-400 font-medium italic">{l.timestamp?.toDate().toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</p>
+                                                <p className="font-bold text-[11px] text-slate-700 uppercase leading-none">{l.petugas}</p>
+                                                <p className="text-[7px] text-slate-400 font-medium italic mt-0.5">{l.timestamp?.toDate().toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</p>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
-                                <p className="text-center text-[8px] font-bold text-slate-300 uppercase tracking-widest mt-4">Log otomatis terhapus setelah 2 minggu</p>
+                                <p className="text-center text-[8px] font-black text-slate-300 uppercase tracking-widest mt-6">Data harian tetap dipertahankan untuk pemantauan</p>
                             </div>
                         )}
                     </main>
