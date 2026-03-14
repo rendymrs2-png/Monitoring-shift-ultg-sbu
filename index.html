@@ -93,7 +93,9 @@
                 foto: null 
             });
             const fileRef = useRef(null);
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'pln-shift-monitor-v2';
+            
+            // App ID tetap sesuai Rules agar konsisten
+            const appId = 'pln-shift-monitor-v2';
 
             useEffect(() => {
                 const { initializeApp, getFirestore, getAuth, signInAnonymously, onAuthStateChanged } = window.FB;
@@ -102,11 +104,7 @@
                 
                 const initAuth = async () => {
                     try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await FB.signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        await signInAnonymously(auth);
                     } catch (e) { console.error("Auth Error", e); }
                 };
                 initAuth();
@@ -118,7 +116,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // LOGIKA HAPUS OTOMATIS 2 MINGGU
             const cleanOldData = async () => {
                 const { getFirestore, collection, getDocs, deleteDoc, doc } = window.FB;
                 const db = getFirestore();
@@ -156,7 +153,7 @@
                     setOnDuty(Object.values(uniqueGI));
                 }, (err) => {
                     console.error("Firestore Read Error:", err);
-                    setErrorPopup("Gagal memuat data. Cek Rules di Firebase Console!");
+                    setErrorPopup("Gagal sinkronisasi data. Pastikan Rules di Firebase sudah di-Publish!");
                 });
 
                 return () => unsubscribe();
@@ -181,7 +178,7 @@
                 try {
                     const { getFirestore, collection, addDoc, Timestamp } = window.FB;
                     const db = getFirestore();
-                    if (!user) throw new Error("Akses ditolak. Cek koneksi.");
+                    if (!user) throw new Error("Sesi berakhir, silakan refresh.");
 
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_reports'), {
                         ...form,
@@ -194,7 +191,7 @@
                     setView('active');
                 } catch (e) { 
                     console.error("Submit Error:", e);
-                    setErrorPopup(`Gagal kirim. Pastikan Rules Firebase sudah di-Publish!`); 
+                    setErrorPopup(`Gagal kirim laporan. Pastikan kode Rules Firebase sudah benar dan di-Publish!`); 
                 }
                 setLoading(false);
             };
@@ -213,7 +210,6 @@
                     setIsAuthorized(true);
                     setShowSettings(false);
                     setPasswordInput("");
-                    cleanOldData(); 
                 } else {
                     setErrorPopup("Password Admin Salah!");
                 }
