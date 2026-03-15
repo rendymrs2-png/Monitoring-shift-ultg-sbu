@@ -47,7 +47,7 @@
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef } = React;
 
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
@@ -81,14 +81,14 @@
             const fileRef = useRef(null);
             const dbRef = useRef(null);
 
-            const appId = "pln-shift-upt-surabaya";
+            const appId = typeof __app_id !== 'undefined' ? __app_id : "pln-shift-upt-surabaya";
             const firebaseConfig = JSON.parse(window.__firebase_config || "{}");
             const shiftOptions = ["SHIFT 1 (PAGI)", "SHIFT 2 (SORE)", "SHIFT 3 (MALAM)", "LAINNYA"];
 
             useEffect(() => {
                 const init = async () => {
                     if (!window.FB) return;
-                    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, getDocs, deleteDoc, doc, query, orderBy } = window.FB;
+                    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, query, orderBy } = window.FB;
                     
                     try {
                         const app = initializeApp(firebaseConfig);
@@ -124,7 +124,7 @@
                 setTimeout(() => setNotif(null), 3500);
             };
 
-            // Fungsi kompresi gambar yang diperbaiki untuk HP memori rendah
+            // Fungsi kompresi gambar SUPER EKSTREM untuk hemat memori dan storage
             const compressImage = (file) => {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -134,29 +134,31 @@
                         img.src = event.target.result;
                         img.onload = () => {
                             const canvas = document.createElement('canvas');
-                            const MAX_WIDTH = 1000; // Ukuran optimal untuk upload cepat
+                            const MAX_SIZE = 800; // Resolusi diperkecil lagi agar pasti < 1MB
                             let width = img.width;
                             let height = img.height;
 
                             if (width > height) {
-                                if (width > MAX_WIDTH) {
-                                    height *= MAX_WIDTH / width;
-                                    width = MAX_WIDTH;
+                                if (width > MAX_SIZE) {
+                                    height *= MAX_SIZE / width;
+                                    width = MAX_SIZE;
                                 }
                             } else {
-                                if (height > MAX_WIDTH) {
-                                    width *= MAX_WIDTH / height;
-                                    height = MAX_WIDTH;
+                                if (height > MAX_SIZE) {
+                                    width *= MAX_SIZE / height;
+                                    height = MAX_SIZE;
                                 }
                             }
 
                             canvas.width = width;
                             canvas.height = height;
                             const ctx = canvas.getContext('2d');
+                            ctx.imageSmoothingEnabled = true;
+                            ctx.imageSmoothingQuality = 'high';
                             ctx.drawImage(img, 0, 0, width, height);
                             
-                            // Kompresi ke JPEG dengan kualitas 0.5 (50%)
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                            // Kualitas 0.4 sudah cukup jelas untuk laporan dan ukurannya sangat kecil (~50-100KB)
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.4);
                             resolve(dataUrl);
                         };
                         img.onerror = () => reject(new Error("Gagal memuat gambar"));
@@ -175,12 +177,13 @@
                     setFoto(compressed);
                 } catch (err) {
                     console.error(err);
-                    notify("Gagal memproses foto. Coba foto lain.", "error");
+                    notify("Gagal memproses foto. Silakan coba lagi.", "error");
                 }
                 setImgProcessing(false);
             };
 
             const submitReport = async () => {
+                if (!user) return notify("Menunggu koneksi...", "error");
                 const finalShift = shiftType === 'LAINNYA' ? shiftLainnya : shiftType;
                 if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) return notify("Lengkapi data & foto!", "error");
                 
@@ -200,10 +203,14 @@
                     
                     setLokasi(''); setPetugas(''); setWhatsapp(''); setShiftType(''); setShiftLainnya(''); setKeterangan(''); setFoto(null);
                     setView('active');
-                    notify("Laporan Berhasil Terkirim!");
+                    notify("Laporan Terkirim!");
                 } catch (e) { 
                     console.error(e);
-                    notify("Gagal mengirim", "error"); 
+                    if (e.message.includes('large')) {
+                        notify("Foto terlalu besar. Sistem akan otomatis memperkecil lagi.", "error");
+                    } else {
+                        notify("Gagal mengirim. Periksa koneksi.", "error");
+                    }
                 }
                 setLoading(false);
             };
@@ -224,7 +231,7 @@
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col relative select-none overflow-x-hidden">
                     {notif && (
-                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl font-black text-[10px] uppercase tracking-widest text-white animate-bounce ${notif.type === 'success' ? 'bg-green-500' : 'bg-red-600'}`}>
+                        <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl font-black text-[10px] uppercase tracking-widest text-white animate-bounce ${notif.type === 'success' ? 'bg-green-500' : 'bg-red-600'}`}>
                             {notif.msg}
                         </div>
                     )}
@@ -302,24 +309,24 @@
                                             <button 
                                                 onClick={()=> !imgProcessing && fileRef.current.click()} 
                                                 disabled={imgProcessing}
-                                                className={`w-full py-12 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center transition-all ${imgProcessing ? 'opacity-50 grayscale' : 'text-slate-400 hover:text-blue-900 active:scale-95'}`}
+                                                className={`w-full py-12 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center transition-all ${imgProcessing ? 'opacity-50' : 'text-slate-400 hover:text-blue-900 active:scale-95'}`}
                                             >
                                                 {imgProcessing ? (
                                                     <div className="flex flex-col items-center">
                                                         <div className="w-8 h-8 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mb-3"></div>
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Sedang Mengolah...</span>
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Kompresi Foto...</span>
                                                     </div>
                                                 ) : (
                                                     <>
                                                         <Icon name="image" size={32} />
                                                         <span className="text-[10px] font-black uppercase mt-3 tracking-widest">Pilih / Ambil Foto</span>
-                                                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Otomatis kompres untuk HP RAM rendah</p>
+                                                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Otomatis perkecil ukuran file</p>
                                                     </>
                                                 )}
                                                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
                                             </button>
                                         ) : (
-                                            <div className="relative rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white group">
+                                            <div className="relative rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white">
                                                 <img src={foto} className="w-full h-auto" alt="Preview" />
                                                 <button onClick={()=>setFoto(null)} className="absolute top-4 right-4 bg-red-600 text-white p-2.5 rounded-xl shadow-lg active:scale-90 transition-all">
                                                     <Icon name="trash" size={18} />
@@ -333,7 +340,7 @@
                                         disabled={loading || imgProcessing}
                                         className="w-full pln-gradient text-white py-6 rounded-3xl font-black text-sm uppercase tracking-[0.4em] shadow-xl active:scale-95 transition-all disabled:opacity-50 mt-4"
                                     >
-                                        {loading ? 'MENYIMPAN...' : 'Kirim Laporan'}
+                                        {loading ? 'PROSES KIRIM...' : 'Kirim Laporan'}
                                     </button>
                                 </div>
                             </div>
@@ -346,7 +353,7 @@
                                     Petugas Aktif Per GI
                                 </h2>
                                 {logs.length === 0 ? (
-                                    <div className="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-100 italic text-slate-300 font-bold uppercase text-[10px]">Data tidak ditemukan</div>
+                                    <div className="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-100 italic text-slate-300 font-bold uppercase text-[10px]">Belum ada laporan hari ini</div>
                                 ) : Array.from(new Set(logs.map(l => l.tempatKerja))).map(loc => {
                                     const l = logs.find(item => item.tempatKerja === loc);
                                     return (
