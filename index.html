@@ -120,29 +120,47 @@
                 if (!file) return;
 
                 setImgProcessing(true);
-                try {
-                    const img = new Image();
-                    const objectUrl = URL.createObjectURL(file);
-                    
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let w = img.width, h = img.height;
-                        const maxSize = 800;
-
-                        if (w > h) { if (w > maxSize) { h *= maxSize / w; w = maxSize; } }
-                        else { if (h > maxSize) { w *= maxSize / h; h = maxSize; } }
-
-                        canvas.width = w; canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.imageSmoothingEnabled = true;
-                        ctx.drawImage(img, 0, 0, w, h);
-                        
-                        setFoto(canvas.toDataURL('image/jpeg', 0.4));
-                        URL.revokeObjectURL(objectUrl);
+                
+                // Gunakan timeout untuk mencegah loading selamanya jika browser macet
+                const timeoutId = setTimeout(() => {
+                    if (imgProcessing) {
                         setImgProcessing(false);
+                        notify("Proses terlalu lama. Pastikan memori HP cukup.", "error");
+                    }
+                }, 10000);
+
+                try {
+                    // Gunakan FileReader sebagai metode paling kompatibel (fallback)
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            clearTimeout(timeoutId);
+                            const canvas = document.createElement('canvas');
+                            let w = img.width, h = img.height;
+                            const maxSize = 800;
+
+                            if (w > h) { if (w > maxSize) { h *= maxSize / w; w = maxSize; } }
+                            else { if (h > maxSize) { w *= maxSize / h; h = maxSize; } }
+
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, w, h);
+                            
+                            // Base64 format
+                            setFoto(canvas.toDataURL('image/jpeg', 0.5));
+                            setImgProcessing(false);
+                        };
+                        img.onerror = () => {
+                            clearTimeout(timeoutId);
+                            notify("Gagal memuat gambar", "error");
+                            setImgProcessing(false);
+                        };
+                        img.src = event.target.result;
                     };
-                    img.src = objectUrl;
+                    reader.readAsDataURL(file);
                 } catch (err) {
+                    clearTimeout(timeoutId);
                     notify("Gagal memproses foto", "error");
                     setImgProcessing(false);
                 }
