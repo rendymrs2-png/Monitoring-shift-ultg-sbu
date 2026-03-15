@@ -50,23 +50,16 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, deleteDoc, doc, getDocs, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, deleteDoc, doc, getDocs, where };
+        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, deleteDoc, doc, getDocs, where, signInWithCustomToken };
     </script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyAG60SGFpT5PSqT0dA_D5Nv4Bg8YvkoBqY",
-            authDomain: "monitoring-shift.firebaseapp.com",
-            projectId: "monitoring-shift",
-            storageBucket: "monitoring-shift.firebasestorage.app",
-            messagingSenderId: "365268810773",
-            appId: "1:365268810773:web:89b9937e9dd46d98c1e21c",
-            measurementId: "G-BESPDSZH8S"
-        };
+        const firebaseConfig = JSON.parse('{"apiKey": "AIzaSyAG60SGFpT5PSqT0dA_D5Nv4Bg8YvkoBqY", "authDomain": "monitoring-shift.firebaseapp.com", "projectId": "monitoring-shift", "storageBucket": "monitoring-shift.firebasestorage.app", "messagingSenderId": "365268810773", "appId": "1:365268810773:web:89b9937e9dd46d98c1e21c"}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'pln-upt-surabaya';
 
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
@@ -91,6 +84,7 @@
             const [notif, setNotif] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const dbRef = useRef(null);
+            const authRef = useRef(null);
             
             // Form States
             const [lokasi, setLokasi] = useState('');
@@ -107,47 +101,35 @@
                 setTimeout(() => setNotif(null), 3500);
             };
 
-            const cleanupOldLogs = async (db) => {
-                try {
-                    const { collection, getDocs, deleteDoc, doc, Timestamp } = window.FB;
-                    const fourteenDaysAgo = new Date();
-                    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-                    const tsThreshold = Timestamp.fromDate(fourteenDaysAgo);
-
-                    const colRef = collection(db, "shift_logs");
-                    const snap = await getDocs(colRef);
-                    
-                    snap.forEach(async (d) => {
-                        const data = d.data();
-                        if (data.timestamp && data.timestamp.seconds < tsThreshold.seconds) {
-                            await deleteDoc(doc(db, "shift_logs", d.id));
-                        }
-                    });
-                } catch (e) { console.error("Cleanup error:", e); }
-            };
-
             useEffect(() => {
                 const init = async () => {
                     if (!window.FB) return;
-                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, collection, query, orderBy, onSnapshot } = window.FB;
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, collection, query, orderBy, onSnapshot, signInWithCustomToken } = window.FB;
                     
                     try {
                         const app = initializeApp(firebaseConfig);
                         const auth = getAuth(app);
+                        authRef.current = auth;
                         const db = getFirestore(app);
                         dbRef.current = db;
 
-                        await signInAnonymously(auth);
+                        const initAuth = async () => {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        };
+                        initAuth();
 
                         onAuthStateChanged(auth, (u) => {
                             setUser(u);
                             if (u) {
-                                cleanupOldLogs(db);
-                                const colRef = collection(db, "shift_logs");
+                                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'shift_logs');
                                 const q = query(colRef, orderBy("timestamp", "desc"));
                                 onSnapshot(q, (snap) => {
                                     setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                                });
+                                }, (err) => console.error("Snapshot error:", err));
                             }
                         });
                     } catch (e) { console.error("Firebase Error:", e); }
@@ -158,31 +140,52 @@
             const compressImage = (file) => {
                 return new Promise((resolve, reject) => {
                     if (!file.type.startsWith('image/')) {
-                        return reject(new Error("File bukan gambar"));
+                        return reject(new Error("Bukan file gambar"));
                     }
-                    const reader = new FileReader();
-                    reader.readAsDataURL(file);
-                    reader.onload = (e) => {
-                        const img = new Image();
-                        img.src = e.target.result;
-                        img.onerror = () => reject(new Error("Gagal membaca file gambar"));
-                        img.onload = () => {
-                            try {
-                                const canvas = document.createElement('canvas');
-                                const MAX_DIM = 1000; // Ukuran sedikit lebih besar untuk kualitas
-                                let w = img.width, h = img.height;
-                                if (w > h) { if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; } }
-                                else { if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; } }
-                                canvas.width = w; canvas.height = h;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, w, h);
-                                resolve(canvas.toDataURL('image/jpeg', 0.7));
-                            } catch (err) {
-                                reject(err);
+
+                    // Gunakan URL.createObjectURL untuk efisiensi memori pada HP
+                    const imgUrl = URL.createObjectURL(file);
+                    const img = new Image();
+                    
+                    // Mencegah masalah pemuatan pada beberapa browser HP
+                    img.crossOrigin = "anonymous"; 
+                    
+                    img.onload = () => {
+                        URL.revokeObjectURL(imgUrl); // Bersihkan memori segera setelah dimuat
+                        try {
+                            const canvas = document.createElement('canvas');
+                            const MAX_DIM = 1200; // Resolusi tetap tajam tapi hemat data
+                            let w = img.width;
+                            let h = img.height;
+
+                            if (w > h) {
+                                if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; }
+                            } else {
+                                if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; }
                             }
-                        };
+
+                            canvas.width = w;
+                            canvas.height = h;
+                            const ctx = canvas.getContext('2d', { alpha: false }); // Mematikan alpha mempercepat proses
+                            
+                            // Pastikan background putih untuk JPEG
+                            ctx.fillStyle = "#FFFFFF";
+                            ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(img, 0, 0, w, h);
+                            
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.6); // Kualitas 60% sudah cukup untuk laporan
+                            resolve(dataUrl);
+                        } catch (err) {
+                            reject(err);
+                        }
                     };
-                    reader.onerror = () => reject(new Error("File rusak atau tidak terbaca"));
+
+                    img.onerror = () => {
+                        URL.revokeObjectURL(imgUrl);
+                        reject(new Error("Gagal membaca file gambar"));
+                    };
+
+                    img.src = imgUrl;
                 });
             };
 
@@ -195,42 +198,48 @@
                     const compressed = await compressImage(file);
                     setFoto(compressed);
                 } catch (err) {
-                    notify("Gagal memuat gambar. Coba ganti foto lain.", "error");
                     console.error("Image processing error:", err);
+                    notify("Gagal memproses foto. Silakan coba foto lain atau pastikan formatnya benar.", "error");
                 }
                 setImgProcessing(false);
-                // Reset file input agar bisa upload file yang sama jika dihapus
                 e.target.value = '';
             };
 
             const handleSubmit = async () => {
+                if (!user) return notify("Tunggu sebentar, sedang autentikasi...", "error");
+                
                 const finalShift = shift === 'LAINNYA' ? shiftLainnya : shift;
                 if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) {
-                    return notify("Lengkapi data & foto!", "error");
+                    return notify("Mohon lengkapi semua data dan foto!", "error");
                 }
+                
                 setLoading(true);
                 try {
-                    const { collection, addDoc, Timestamp } = window.FB;
-                    await addDoc(collection(dbRef.current, "shift_logs"), {
-                        lokasi: lokasi.toUpperCase(),
-                        petugas: petugas.toUpperCase(),
+                    const { collection, addDoc, Timestamp, doc } = window.FB;
+                    await addDoc(collection(dbRef.current, 'artifacts', appId, 'public', 'data', 'shift_logs'), {
+                        lokasi: lokasi.toUpperCase().trim(),
+                        petugas: petugas.toUpperCase().trim(),
                         wa: whatsapp.replace(/\D/g, ''),
                         shift: finalShift.toUpperCase(),
-                        keterangan: keterangan.toUpperCase(),
+                        keterangan: keterangan.toUpperCase().trim(),
                         foto: foto,
                         timestamp: Timestamp.now(),
                         uid: user.uid
                     });
+                    
                     setLokasi(''); setPetugas(''); setWhatsapp(''); setFoto(null); setShift(''); setShiftLainnya(''); setKeterangan('');
                     setView('active');
-                    notify("Laporan Terkirim!");
-                } catch (e) { notify(`Gagal: ${e.message}`, "error"); }
+                    notify("Laporan Berhasil Terkirim!");
+                } catch (e) { 
+                    console.error(e);
+                    notify("Gagal mengirim laporan. Coba lagi.", "error"); 
+                }
                 setLoading(false);
             };
 
             const openWA = (num, name, loc) => {
                 let cleanNum = num.toString().startsWith('0') ? '62' + num.toString().slice(1) : num;
-                const msg = encodeURIComponent(`Halo *${name}*, koordinasi shift Gardu Induk ${loc}...`);
+                const msg = encodeURIComponent(`Halo *${name}*, koordinasi serah terima shift di Gardu Induk ${loc}...`);
                 window.open(`https://wa.me/${cleanNum}?text=${msg}`, '_blank');
             };
 
@@ -361,7 +370,7 @@
                                             <button 
                                                 onClick={() => !imgProcessing && fileRef.current.click()} 
                                                 disabled={imgProcessing}
-                                                className={`w-full py-10 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center transition-all bg-slate-50 ${imgProcessing ? 'opacity-70 grayscale' : 'active:bg-blue-50 hover:text-blue-900 text-slate-400'}`}
+                                                className={`w-full py-10 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center transition-all bg-slate-50 ${imgProcessing ? 'opacity-70 grayscale cursor-not-allowed' : 'active:bg-blue-50 hover:text-blue-900 text-slate-400'}`}
                                             >
                                                 <div className={`p-4 rounded-2xl shadow-sm mb-3 ${imgProcessing ? 'shimmer' : 'bg-white'}`}>
                                                     <Icon name="upload" size={32} className={imgProcessing ? 'text-slate-300' : 'text-blue-900'} />
@@ -369,7 +378,7 @@
                                                 <span className="text-[10px] font-black uppercase tracking-widest">
                                                     {imgProcessing ? 'Sedang Memproses Gambar...' : 'Pilih / Ambil Dokumen'}
                                                 </span>
-                                                <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Kamera • Galeri • File • Drive</p>
+                                                <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Mendukung resolusi tinggi</p>
                                                 <input 
                                                     ref={fileRef} 
                                                     type="file" 
@@ -380,7 +389,7 @@
                                             </button>
                                         ) : (
                                             <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white aspect-video bg-slate-100 group">
-                                                <img src={foto} className="w-full h-full object-cover" />
+                                                <img src={foto} className="w-full h-full object-cover" alt="Preview Laporan" />
                                                 <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                                                 <button onClick={()=>setFoto(null)} className="absolute top-3 right-3 bg-red-600 text-white p-2.5 rounded-xl shadow-lg active:scale-90 hover:bg-red-700 transition-colors z-10"><Icon name="trash" size={18}/></button>
                                             </div>
@@ -397,12 +406,12 @@
                             <div className="space-y-4 page-transition">
                                 {latestPerGI.length === 0 ? (
                                     <div className="text-center py-24 bg-white rounded-[3rem] text-slate-300 font-black uppercase text-[10px] tracking-widest">
-                                        {searchTerm ? 'Pencarian Nihil' : 'Belum ada petugas'}
+                                        {searchTerm ? 'Pencarian tidak ditemukan' : 'Belum ada laporan aktif'}
                                     </div>
                                 ) : latestPerGI.map(l => (
                                     <div key={l.id} className="bg-white p-5 rounded-[2.5rem] shadow-sm flex flex-col gap-4 border border-slate-100">
                                         <div className="flex items-center gap-5">
-                                            <img src={l.foto} className="w-20 h-20 rounded-2xl object-cover bg-slate-100 shadow-inner" />
+                                            <img src={l.foto} className="w-20 h-20 rounded-2xl object-cover bg-slate-100 shadow-inner" alt={l.petugas} />
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex flex-wrap gap-1.5 mb-1.5">
                                                     <span className="text-[7px] font-black bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-tighter">{l.lokasi}</span>
@@ -459,7 +468,7 @@
                                             </div>
                                         ))}
                                         <div className="text-center py-6">
-                                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Sistem otomatis menghapus log > 14 hari</p>
+                                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Sistem otomatis menyimpan data terbaru</p>
                                         </div>
                                     </>
                                 )}
