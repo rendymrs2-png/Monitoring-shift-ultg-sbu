@@ -39,9 +39,10 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        window.FB = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, deleteDoc, doc, getDocs };
+        
+        window.FirebaseSDK = { initializeApp, getFirestore, collection, addDoc, onSnapshot, Timestamp, query, orderBy, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, doc };
     </script>
 
     <script type="text/babel">
@@ -79,105 +80,89 @@
             
             const fileRef = useRef(null);
             const dbRef = useRef(null);
-            const appId = "pln-shift-upt-surabaya";
+            const authRef = useRef(null);
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'pln-shift-upt-surabaya';
             const firebaseConfig = JSON.parse(window.__firebase_config || "{}");
-
-            useEffect(() => {
-                const init = async () => {
-                    if (!window.FB) return;
-                    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, query, orderBy } = window.FB;
-                    try {
-                        const app = initializeApp(firebaseConfig);
-                        const auth = getAuth(app);
-                        dbRef.current = getFirestore(app);
-
-                        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-                            await signInWithCustomToken(auth, window.__initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-
-                        onAuthStateChanged(auth, (u) => {
-                            setUser(u);
-                            if (u) {
-                                const q = query(collection(dbRef.current, `/artifacts/${appId}/public/data/shift_logs`), orderBy("timestamp", "desc"));
-                                onSnapshot(q, (snap) => {
-                                    setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                                });
-                            }
-                        });
-                    } catch (e) { console.error(e); }
-                };
-                init();
-            }, []);
 
             const notify = (msg, type = "success") => {
                 setNotif({ msg, type });
                 setTimeout(() => setNotif(null), 3500);
             };
 
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                // Cek ukuran file sebelum proses (Opsional, info saja)
-                if (file.size > 10 * 1024 * 1024) {
-                    notify("File terlalu besar (>10MB), coba kompres dulu", "error");
-                }
-
-                setImgProcessing(true);
-                
-                const timeoutId = setTimeout(() => {
-                    if (imgProcessing) {
-                        setImgProcessing(false);
-                        notify("Gagal: HP Anda kekurangan memori untuk memproses foto ini.", "error");
-                    }
-                }, 15000);
-
+            const performAuth = async () => {
+                if (!authRef.current) return;
                 try {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            clearTimeout(timeoutId);
-                            const canvas = document.createElement('canvas');
-                            let w = img.width, h = img.height;
-                            const maxSize = 800; // Perkecil untuk stabilitas HP
-
-                            if (w > h) { if (w > maxSize) { h *= maxSize / w; w = maxSize; } }
-                            else { if (h > maxSize) { w *= maxSize / h; h = maxSize; } }
-
-                            canvas.width = w; canvas.height = h;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0, w, h);
-                            
-                            setFoto(canvas.toDataURL('image/jpeg', 0.5));
-                            setImgProcessing(false);
-                        };
-                        img.onerror = () => {
-                            clearTimeout(timeoutId);
-                            notify("Gagal memuat format gambar", "error");
-                            setImgProcessing(false);
-                        };
-                        img.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                } catch (err) {
-                    clearTimeout(timeoutId);
-                    notify("Gagal memproses foto", "error");
-                    setImgProcessing(false);
+                    if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                        await window.FirebaseSDK.signInWithCustomToken(authRef.current, window.__initial_auth_token);
+                    } else {
+                        await window.FirebaseSDK.signInAnonymously(authRef.current);
+                    }
+                } catch (e) {
+                    console.error("Auth Error:", e);
                 }
             };
 
+            useEffect(() => {
+                if (!window.FirebaseSDK) return;
+                const { initializeApp, getAuth, onAuthStateChanged, getFirestore, collection, query, orderBy, onSnapshot } = window.FirebaseSDK;
+                const app = initializeApp(firebaseConfig);
+                authRef.current = getAuth(app);
+                dbRef.current = getFirestore(app);
+                performAuth();
+                const unsubscribe = onAuthStateChanged(authRef.current, (u) => {
+                    setUser(u);
+                    if (u) {
+                        const q = query(collection(dbRef.current, 'artifacts', appId, 'public', 'data', 'shift_logs'), orderBy("timestamp", "desc"));
+                        onSnapshot(q, (snap) => {
+                            setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        }, (err) => console.error("Firestore Error:", err));
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setImgProcessing(true);
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        const maxSize = 800;
+                        if (w > h) { if (w > maxSize) { h *= maxSize / w; w = maxSize; } }
+                        else { if (h > maxSize) { w *= maxSize / h; h = maxSize; } }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        setFoto(canvas.toDataURL('image/jpeg', 0.6));
+                        setImgProcessing(false);
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
             const submitReport = async () => {
-                if (!user) return notify("Menunggu koneksi...", "error");
+                if (!authRef.current?.currentUser) {
+                    setLoading(true);
+                    await performAuth();
+                    setLoading(false);
+                }
+                const currentUser = authRef.current?.currentUser;
+                if (!currentUser) return notify("Menunggu koneksi database...", "error");
+
                 const finalShift = shiftType === 'LAINNYA' ? shiftLainnya : shiftType;
-                if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) return notify("Lengkapi data & foto!", "error");
+                if (!lokasi || !petugas || !whatsapp || !finalShift || !foto) {
+                    return notify("Mohon lengkapi data dan lampiran foto!", "error");
+                }
                 
                 setLoading(true);
                 try {
-                    const { collection, addDoc, Timestamp } = window.FB;
-                    await addDoc(collection(dbRef.current, `/artifacts/${appId}/public/data/shift_logs`), {
+                    const { collection, addDoc, Timestamp } = window.FirebaseSDK;
+                    await addDoc(collection(dbRef.current, 'artifacts', appId, 'public', 'data', 'shift_logs'), {
                         tempatKerja: lokasi.toUpperCase().trim(),
                         petugasPengganti: petugas.toUpperCase().trim(),
                         whatsapp: whatsapp.replace(/\D/g, ''),
@@ -185,12 +170,14 @@
                         keterangan: keterangan.trim(),
                         foto,
                         timestamp: Timestamp.now(),
-                        uid: user.uid
+                        uid: currentUser.uid
                     });
                     setLokasi(''); setPetugas(''); setWhatsapp(''); setShiftType(''); setShiftLainnya(''); setKeterangan(''); setFoto(null);
                     setView('active');
-                    notify("Laporan Terkirim!");
-                } catch (e) { notify("Gagal mengirim", "error"); }
+                    notify("Laporan Berhasil Terkirim!");
+                } catch (e) { 
+                    notify("Gagal mengirim, coba lagi", "error"); 
+                }
                 setLoading(false);
             };
 
@@ -220,6 +207,13 @@
                         </div>
                     </header>
 
+                    {!user && view === 'form' && (
+                        <div className="mx-4 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center gap-2">
+                            <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+                            <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Menghubungkan Server...</span>
+                        </div>
+                    )}
+
                     <nav className="flex bg-white mx-4 mt-6 mb-2 p-1.5 rounded-full shadow-sm border border-slate-100 sticky top-24 z-40">
                         {['form', 'active', 'history'].map((t) => (
                             <button 
@@ -227,7 +221,7 @@
                                 onClick={() => setView(t)}
                                 className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${view === t ? 'bg-blue-900 text-white shadow-lg' : 'text-slate-400'}`}
                             >
-                                {t === 'form' ? 'Lapor' : t === 'active' ? 'Status' : 'Log'}
+                                {t === 'form' ? 'Lapor Shift' : t === 'active' ? 'Status' : 'Log'}
                             </button>
                         ))}
                     </nav>
@@ -236,11 +230,11 @@
                         {view === 'form' && (
                             <div className="card-premium p-8 page-transition">
                                 <h2 className="text-2xl font-black text-blue-900 uppercase leading-none">Serah Terima</h2>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Input Laporan Shift Lapangan</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Sistem Monitoring Operasional</p>
                                 
                                 <div className="mt-8 space-y-5">
                                     <div className="space-y-1">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Gardu Induk</label>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Lokasi Gardu Induk / Unit</label>
                                         <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="CONTOH: GI SUKOLILO" />
                                     </div>
 
@@ -260,7 +254,7 @@
                                     )}
 
                                     <div className="space-y-1">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Petugas On Duty</label>
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nama Petugas On Duty</label>
                                         <input value={petugas} onChange={e=>setPetugas(e.target.value)} className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase text-sm outline-none focus:border-blue-500 transition-all" placeholder="NAMA LENGKAP" />
                                     </div>
 
@@ -300,19 +294,8 @@
                                                 </button>
                                             </div>
                                         )}
-
-                                        {/* TEKS SARAN PANDUAN UPLOAD */}
                                         <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                                            <div className="flex items-center gap-2 mb-2 text-blue-900">
-                                                <Icon name="info" size={16} />
-                                                <span className="text-[10px] font-black uppercase tracking-wider">Tips Jika Upload Macet:</span>
-                                            </div>
-                                            <ul className="text-[10px] text-blue-700/80 leading-relaxed space-y-1 font-bold">
-                                                <li>• Gunakan foto dengan ukuran file di bawah 5MB.</li>
-                                                <li>• Jika kamera HP terlalu tinggi resolusinya, silakan foto objek dulu lalu kirim ke WhatsApp sendiri (kompres), simpan, baru upload di sini.</li>
-                                                <li>• Jangan membuka terlalu banyak aplikasi lain saat mengupload foto.</li>
-                                                <li>• Jika loading berhenti (stuck), silakan refresh halaman dan coba lagi.</li>
-                                            </ul>
+                                            <p className="text-[10px] font-bold text-blue-700/80 leading-relaxed leading-tight uppercase tracking-wider">• Gunakan foto hasil kiriman WhatsApp jika memori HP terbatas atau sinyal sulit.</p>
                                         </div>
                                     </div>
 
@@ -330,7 +313,7 @@
                         {view === 'active' && (
                             <div className="space-y-4 page-transition">
                                 {logs.length === 0 ? (
-                                    <div className="text-center py-20 bg-white rounded-[2rem] italic text-slate-300 font-bold uppercase text-[10px]">Belum ada laporan</div>
+                                    <div className="text-center py-20 bg-white rounded-[2rem] italic text-slate-300 font-bold uppercase text-[10px]">Belum ada laporan aktif</div>
                                 ) : Array.from(new Set(logs.map(l => l.tempatKerja))).map(loc => {
                                     const l = logs.find(item => item.tempatKerja === loc);
                                     return (
