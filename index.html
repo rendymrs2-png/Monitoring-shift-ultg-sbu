@@ -32,6 +32,15 @@
             background-position: right 1rem center;
             background-size: 1.5em;
         }
+        .shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
 </head>
 <body>
@@ -78,6 +87,7 @@
             const [user, setUser] = useState(null);
             const [logs, setLogs] = useState([]);
             const [loading, setLoading] = useState(false);
+            const [imgProcessing, setImgProcessing] = useState(false);
             const [notif, setNotif] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const dbRef = useRef(null);
@@ -94,7 +104,7 @@
 
             const notify = (msg, type = "success") => {
                 setNotif({ msg, type });
-                setTimeout(() => setNotif(null), 3000);
+                setTimeout(() => setNotif(null), 3500);
             };
 
             const cleanupOldLogs = async (db) => {
@@ -146,24 +156,51 @@
             }, []);
 
             const compressImage = (file) => {
-                return new Promise((resolve) => {
+                return new Promise((resolve, reject) => {
+                    if (!file.type.startsWith('image/')) {
+                        return reject(new Error("File bukan gambar"));
+                    }
                     const reader = new FileReader();
                     reader.readAsDataURL(file);
                     reader.onload = (e) => {
                         const img = new Image();
                         img.src = e.target.result;
+                        img.onerror = () => reject(new Error("Gagal membaca file gambar"));
                         img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            const MAX_DIM = 800;
-                            let w = img.width, h = img.height;
-                            if (w > h) { if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; } }
-                            else { if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; } }
-                            canvas.width = w; canvas.height = h;
-                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                            resolve(canvas.toDataURL('image/jpeg', 0.6));
+                            try {
+                                const canvas = document.createElement('canvas');
+                                const MAX_DIM = 1000; // Ukuran sedikit lebih besar untuk kualitas
+                                let w = img.width, h = img.height;
+                                if (w > h) { if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; } }
+                                else { if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; } }
+                                canvas.width = w; canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, w, h);
+                                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                            } catch (err) {
+                                reject(err);
+                            }
                         };
                     };
+                    reader.onerror = () => reject(new Error("File rusak atau tidak terbaca"));
                 });
+            };
+
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setImgProcessing(true);
+                try {
+                    const compressed = await compressImage(file);
+                    setFoto(compressed);
+                } catch (err) {
+                    notify("Gagal memuat gambar. Coba ganti foto lain.", "error");
+                    console.error("Image processing error:", err);
+                }
+                setImgProcessing(false);
+                // Reset file input agar bisa upload file yang sama jika dihapus
+                e.target.value = '';
             };
 
             const handleSubmit = async () => {
@@ -321,28 +358,35 @@
                                     
                                     <div className="space-y-2 pt-2">
                                         {!foto ? (
-                                            <button onClick={()=>fileRef.current.click()} className="w-full py-10 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center text-slate-400 hover:text-blue-900 transition-all bg-slate-50 active:bg-blue-50">
-                                                <div className="bg-white p-4 rounded-2xl shadow-sm mb-3">
-                                                    <Icon name="upload" size={32} className="text-blue-900" />
+                                            <button 
+                                                onClick={() => !imgProcessing && fileRef.current.click()} 
+                                                disabled={imgProcessing}
+                                                className={`w-full py-10 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center transition-all bg-slate-50 ${imgProcessing ? 'opacity-70 grayscale' : 'active:bg-blue-50 hover:text-blue-900 text-slate-400'}`}
+                                            >
+                                                <div className={`p-4 rounded-2xl shadow-sm mb-3 ${imgProcessing ? 'shimmer' : 'bg-white'}`}>
+                                                    <Icon name="upload" size={32} className={imgProcessing ? 'text-slate-300' : 'text-blue-900'} />
                                                 </div>
-                                                <span className="text-[10px] font-black uppercase tracking-widest">Pilih / Ambil Dokumen</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest">
+                                                    {imgProcessing ? 'Sedang Memproses Gambar...' : 'Pilih / Ambil Dokumen'}
+                                                </span>
                                                 <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Kamera • Galeri • File • Drive</p>
-                                                {/* Hapus capture="environment" untuk mengaktifkan pilihan sumber file sistem */}
-                                                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={async(e) => {
-                                                    if(e.target.files[0]) {
-                                                        const compressed = await compressImage(e.target.files[0]);
-                                                        setFoto(compressed);
-                                                    }
-                                                }} />
+                                                <input 
+                                                    ref={fileRef} 
+                                                    type="file" 
+                                                    accept="image/*" 
+                                                    className="hidden" 
+                                                    onChange={handleFileChange} 
+                                                />
                                             </button>
                                         ) : (
-                                            <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white aspect-video bg-slate-100">
+                                            <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white aspect-video bg-slate-100 group">
                                                 <img src={foto} className="w-full h-full object-cover" />
-                                                <button onClick={()=>setFoto(null)} className="absolute top-3 right-3 bg-red-600 text-white p-2.5 rounded-xl shadow-lg active:scale-90"><Icon name="trash" size={18}/></button>
+                                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                                                <button onClick={()=>setFoto(null)} className="absolute top-3 right-3 bg-red-600 text-white p-2.5 rounded-xl shadow-lg active:scale-90 hover:bg-red-700 transition-colors z-10"><Icon name="trash" size={18}/></button>
                                             </div>
                                         )}
                                     </div>
-                                    <button onClick={handleSubmit} disabled={loading} className="w-full pln-gradient text-white py-5 rounded-3xl font-black text-xs uppercase tracking-[0.3em] shadow-2xl active:scale-95 disabled:opacity-50 mt-4">
+                                    <button onClick={handleSubmit} disabled={loading || imgProcessing} className="w-full pln-gradient text-white py-5 rounded-3xl font-black text-xs uppercase tracking-[0.3em] shadow-2xl active:scale-95 disabled:opacity-50 mt-4">
                                         {loading ? 'MENGIRIM...' : 'KIRIM LAPORAN'}
                                     </button>
                                 </div>
