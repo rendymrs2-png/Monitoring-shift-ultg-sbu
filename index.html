@@ -25,6 +25,9 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        /* Custom scrollbar for textarea */
+        textarea::-webkit-scrollbar { width: 4px; }
+        textarea::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body>
@@ -50,6 +53,13 @@
             appId: "1:365268810773:web:89b9937e9dd46d98c1e21c",
             measurementId: "G-BESPDSZH8S"
         };
+
+        const LIST_GARDU_INDUK = [
+            "GIS UJUNG", "GI PERAK", "GIS UNDAAN", "GIS GEMBONG", "GIS NGAGEL",
+            "GI SUKOLILO", "GI SURABAYA SELATAN", "GI KALISARI", "GIS KUPANG",
+            "GIS KREMBANGAN", "GIS WONOKROMO", "GIS SAWAHAN", "GIS KEDINDING",
+            "GI KENJERAN", "GIS SIMPANG"
+        ];
 
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
@@ -134,14 +144,12 @@
                 const file = e.target.files[0];
                 if (!file) return;
 
-                // 1. Cek Format (Hanya Gambar)
                 if (!file.type.startsWith('image/')) {
                     notify("Format file salah! Harus berupa gambar (JPG/PNG).", "error");
                     e.target.value = '';
                     return;
                 }
 
-                // 2. Cek Ukuran (Batas 15MB untuk file mentah sebelum kompresi)
                 if (file.size > 15 * 1024 * 1024) {
                     notify("Ukuran foto terlalu besar (Max 15MB). Coba foto ulang.", "error");
                     e.target.value = '';
@@ -290,8 +298,17 @@
                             <div className="card-premium p-8 page-transition space-y-6">
                                 <div className="space-y-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Lokasi Gardu Induk</label>
-                                        <input value={lokasi} onChange={e=>setLokasi(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold uppercase text-xs focus:bg-white focus:ring-2 focus:ring-blue-50 outline-none" placeholder="MISAL: GI SUKOLILO" />
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Pilih Gardu Induk</label>
+                                        <select 
+                                            value={lokasi} 
+                                            onChange={e=>setLokasi(e.target.value)} 
+                                            className="w-full p-4 bg-slate-50 rounded-2xl font-bold uppercase text-xs focus:bg-white focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer"
+                                        >
+                                            <option value="">- PILIH LOKASI -</option>
+                                            {LIST_GARDU_INDUK.map((gi, idx) => (
+                                                <option key={idx} value={gi}>{gi}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Shift Petugas</label>
@@ -315,8 +332,13 @@
                                         <input value={whatsapp} type="tel" onChange={e=>setWhatsapp(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none" placeholder="08XXXXXXXXXX" />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Keterangan (Opsional)</label>
-                                        <input value={keterangan} onChange={e=>setKeterangan(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none" placeholder="Catatan tambahan jika ada..." />
+                                        <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Keterangan (Gunakan Enter untuk Baris Baru)</label>
+                                        <textarea 
+                                            value={keterangan} 
+                                            onChange={e=>setKeterangan(e.target.value)} 
+                                            className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none min-h-[100px] resize-none focus:bg-white focus:ring-2 focus:ring-blue-50" 
+                                            placeholder="Catatan tambahan (bisa paragraf)..."
+                                        />
                                     </div>
                                     <div className="pt-2">
                                         {!foto ? (
@@ -348,15 +370,11 @@
                                         <ul className="space-y-3">
                                             <li className="flex gap-3 text-[9.5px] font-bold text-slate-600 leading-relaxed">
                                                 <span className="text-amber-500 flex-shrink-0">⚠️</span>
-                                                <span><strong>Error Resolusi:</strong> Jika muncul notifikasi ukuran terlalu besar, gunakan kamera HP langsung (bukan pilih dari galeri lama) atau turunkan setting megapixel kamera Anda.</span>
+                                                <span><strong>Error Resolusi:</strong> Jika muncul notifikasi ukuran terlalu besar, gunakan kamera HP langsung atau turunkan setting megapixel kamera Anda.</span>
                                             </li>
                                             <li className="flex gap-3 text-[9.5px] font-bold text-slate-600 leading-relaxed">
                                                 <span className="text-amber-500 flex-shrink-0">⚠️</span>
-                                                <span><strong>Format Gambar:</strong> Pastikan file berakhiran .jpg, .jpeg, atau .png. File dokumen (PDF/WA Document) tidak akan diterima sistem.</span>
-                                            </li>
-                                            <li className="flex gap-3 text-[9.5px] font-bold text-slate-600 leading-relaxed">
-                                                <span className="text-amber-500 flex-shrink-0">⚠️</span>
-                                                <span><strong>Sinyal Lemah:</strong> Jika upload macet di tengah jalan, pindah ke area dengan sinyal lebih kuat dan tekan segarkan (refresh) halaman.</span>
+                                                <span><strong>Format Gambar:</strong> Pastikan file berakhiran .jpg, .jpeg, atau .png.</span>
                                             </li>
                                         </ul>
                                     </div>
@@ -408,8 +426,8 @@
                                                     <button onClick={()=>openWA(l.wa, l.petugas, l.lokasi)} className="text-green-500 bg-green-50 p-3 rounded-xl border border-green-100 shadow-sm"><Icon name="wa" size={18}/></button>
                                                 </div>
                                                 {l.keterangan && (
-                                                    <div className="mt-3 pt-2 border-t border-slate-50 italic">
-                                                        <p className="text-[9px] text-slate-400 font-medium leading-relaxed">"{l.keterangan}"</p>
+                                                    <div className="mt-3 pt-2 border-t border-slate-50">
+                                                        <p className="text-[9.5px] text-slate-500 font-medium leading-relaxed whitespace-pre-wrap italic">"{l.keterangan}"</p>
                                                     </div>
                                                 )}
                                             </div>
